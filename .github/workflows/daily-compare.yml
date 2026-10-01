@@ -1,0 +1,74 @@
+name: Daily TractorJunction vs VMS compare
+
+on:
+  schedule:
+    # 04:00 UTC = 09:30 IST, every day (GitHub may start scheduled runs a few minutes late)
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+# Least privilege: the job only needs to read the code.
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-compare
+  cancel-in-progress: false
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      VMS_API_BASE: ${{ secrets.VMS_API_BASE }}
+      PROD_VMS_TOKEN: ${{ secrets.PROD_VMS_TOKEN }}
+      ZOHO_ACCOUNTS_DC: ${{ secrets.ZOHO_ACCOUNTS_DC }}
+      CLIQ_API_BASE: ${{ secrets.CLIQ_API_BASE }}
+      CLIQ_CLIENT_ID: ${{ secrets.CLIQ_CLIENT_ID }}
+      CLIQ_CLIENT_SECRET: ${{ secrets.CLIQ_CLIENT_SECRET }}
+      CLIQ_REFRESH_TOKEN: ${{ secrets.CLIQ_REFRESH_TOKEN }}
+      ZOHO_CLIQ_CHANNEL: ${{ secrets.ZOHO_CLIQ_CHANNEL }}
+      SHEET_ID: ${{ secrets.SHEET_ID }}
+      SHEET_WEBAPP_URL: ${{ secrets.SHEET_WEBAPP_URL }}
+      SHEET_WEBAPP_SECRET: ${{ secrets.SHEET_WEBAPP_SECRET }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      # The TJ DB is office-network only, so the location map (exported with
+      # npm run location:export) comes from a secret instead.
+      - name: Restore location map
+        env:
+          LOCATION_MAP_GZ_B64: ${{ secrets.LOCATION_MAP_GZ_B64 }}
+        run: printf '%s' "$LOCATION_MAP_GZ_B64" | base64 -d | gunzip > data/location-map.json
+
+      - name: Warn in Cliq if the VMS token expires within 3 days
+        continue-on-error: true
+        run: |
+          node --input-type=module -e "
+            const t = (process.env.PROD_VMS_TOKEN || '').replace(/^Bearer\s+/i, '');
+            const exp = JSON.parse(Buffer.from(t.split('.')[1] || 'e30', 'base64url').toString()).exp;
+            const days = exp ? (exp * 1000 - Date.now()) / 86400000 : Infinity;
+            if (days < 3) {
+              const { notify } = await import('./auth/zoho-cliq.js');
+              await notify('⚠️ VMS token for the daily TractorJunction vs VMS compare ' + (days <= 0 ? 'has EXPIRED' : 'expires in ' + days.toFixed(1) + ' days') + ' — update the PROD_VMS_TOKEN GitHub secret.');
+            }
+          "
+
+      # Live scan of the site + VMS, then replaces the Google Sheet tabs and posts
+      # the summary to Cliq. Output files hold VMS lead data, so they are never
+      # uploaded as artifacts (artifacts of a public repo are public).
+      - name: Run compare, update sheet, post to Cliq
+        run: npm run daily:tractor-vs-vms
+
+      - name: Notify Cliq on failure
+        if: failure()
+        run: node auth/zoho-cliq.js notify "❌ Daily TractorJunction vs VMS compare failed — see ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

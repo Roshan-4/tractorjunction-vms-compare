@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Secrets — never commit (CI reads them from GitHub Actions secrets)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Run output and fetched data (contains VMS lead data — must stay private)
+output/
+data/*.json
+*.csv
+*.log
+
+# Playwright / browser state
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
