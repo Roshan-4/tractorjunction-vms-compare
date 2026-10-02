@@ -2,8 +2,12 @@ name: Daily TractorJunction vs VMS compare
 
 on:
   schedule:
-    # 04:00 UTC = 09:30 IST, every day (GitHub may start scheduled runs a few minutes late)
-    - cron: '0 4 * * *'
+    # Must finish before 10:00 IST. GitHub delays or drops scheduled runs, most
+    # often on the hour, so use off-the-hour minutes and a backup slot:
+    # 03:17 UTC = 08:47 IST, backup 03:41 UTC = 09:11 IST (skipped by the guard
+    # job when the first one already ran).
+    - cron: '17 3 * * *'
+    - cron: '41 3 * * *'
   workflow_dispatch:
 
 # Least privilege: the job only needs to read the code.
@@ -15,7 +19,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Skip a scheduled run when an earlier scheduled run today already succeeded or
+  # is still going, so the backup slot only runs if the first one was dropped or failed.
+  guard:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then echo run=true >> "$GITHUB_OUTPUT"; exit 0; fi
+          # Only earlier runs count, so the first run of the day never skips itself.
+          url="repos/${{ github.repository }}/actions/workflows/daily-compare.yml/runs?event=schedule&created=$(date -u +%F)&per_page=20"
+          n=$(gh api "$url" --jq '[.workflow_runs[] | select(.id < ${{ github.run_id }}) | select(.conclusion == "success" or .status != "completed")] | length')
+          echo "Earlier scheduled runs today (success or active): $n"
+          if [ "$n" -gt 0 ]; then echo run=false >> "$GITHUB_OUTPUT"; else echo run=true >> "$GITHUB_OUTPUT"; fi
+
   compare:
+    needs: guard
+    if: needs.guard.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
