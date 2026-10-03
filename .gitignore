@@ -10,6 +10,7 @@ node_modules/
 
 # Run output and fetched data (contains VMS lead data — must stay private)
 output/
+non-certified/
 data/*.json
 *.csv
 *.log

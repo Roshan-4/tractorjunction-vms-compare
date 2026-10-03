@@ -23,3 +23,7 @@ VMS and TractorJunction use different location APIs, so a naming difference is n
 ### 5. The repo is public — nothing sensitive is committed
 
 Secrets, internal hosts and IDs live only in `.env` (local) and GitHub Actions secrets (CI): VMS API base/token, DB credentials, Cliq URLs/tokens, sheet ID and web-app URL/secret. `output/`, `data/*.json`, CSVs and logs hold VMS lead data and are gitignored; CI never uploads them as artifacts. Before every push, scan staged files for tokens, hosts, IPs, emails and local paths.
+
+### 6. Non-certified scan results live in `non-certified/`, never `output/`
+
+`output/` is cleared before every VMS compare run, so `auth/non-certified-used-tractors.js` (`npm run tractors:non-certified`) and `auth/compare-used-tractor-snapshots.js` (`npm run tractors:url-changes`) read and write only `non-certified/` (gitignored). Its dated `used-tractors-snapshot-*.json` files are the history used to spot URL slug changes per listing ID, so never delete them when clearing `output/`.

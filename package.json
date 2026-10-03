@@ -8,6 +8,8 @@
     "sheet:update": "node auth/google-sheet.js",
     "cliq:send": "node auth/zoho-cliq.js",
     "cliq:token": "node auth/zoho-cliq.js token",
+    "tractors:non-certified": "node auth/non-certified-used-tractors.js",
+    "tractors:url-changes": "node auth/compare-used-tractor-snapshots.js",
     "location:export": "node db/export-location-map.js",
     "location:secret": "node -e \"process.stdout.write(require('zlib').gzipSync(require('fs').readFileSync('data/location-map.json'),{level:9}).toString('base64'))\" | gh secret set LOCATION_MAP_GZ_B64"
   },
