@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Daily check that used-tractor listings on tractorjunction.com match VMS",
   "scripts": {
+    "test:launch": "playwright test tests/tractorjunction-launch.spec.js",
     "daily:tractor-vs-vms": "node auth/daily-tractorjunction-vs-vms.js",
     "vms:prod-auth": "node auth/vms-prod-token-login.js",
     "sheet:update": "node auth/google-sheet.js",
