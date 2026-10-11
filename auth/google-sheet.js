@@ -35,17 +35,33 @@ export async function updateSheet(stamp) {
     name,
     csv: fs.readFileSync(path.join(OUT_DIR, `tractorjunction-vs-vms${suffix}-${stamp}.csv`), 'utf8'),
   }));
-  const res = await fetch(process.env.SHEET_WEBAPP_URL || '', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ secret: process.env.SHEET_WEBAPP_SECRET, sheetId: process.env.SHEET_ID, tabs }),
-  });
-  const text = await res.text();
+  const body = JSON.stringify({ secret: process.env.SHEET_WEBAPP_SECRET, sheetId: process.env.SHEET_ID, tabs });
+  // Apps Script intermittently answers with a 404/5xx HTML page; the update fully
+  // replaces the tabs, so it is safe to retry. A JSON error (e.g. unauthorized) is final.
+  const ATTEMPTS = 5;
   let json;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    throw new Error(`Sheet web app returned non-JSON (${res.status}) — check the deployment access is "Anyone".`);
+  for (let attempt = 1; ; attempt++) {
+    let problem;
+    try {
+      const res = await fetch(process.env.SHEET_WEBAPP_URL || '', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      });
+      const text = await res.text();
+      try {
+        json = JSON.parse(text);
+        break;
+      } catch {
+        problem = `Sheet web app returned non-JSON (${res.status}) — check the deployment access is "Anyone".`;
+      }
+    } catch (e) {
+      problem = `Sheet web app request failed: ${e.message || e}`;
+    }
+    if (attempt >= ATTEMPTS) throw new Error(problem);
+    const delay = 5000 * 2 ** (attempt - 1);
+    console.warn(`  ${problem} — retry ${attempt}/${ATTEMPTS - 1} in ${delay / 1000}s`);
+    await new Promise((r) => setTimeout(r, delay));
   }
   if (!json.ok) throw new Error(`Sheet update failed: ${json.error}`);
   console.log(`  Sheet -> replaced ${tabs.length} tabs for ${stamp}: ${sheetUrl()}`);
