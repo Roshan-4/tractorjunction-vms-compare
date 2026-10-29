@@ -49,7 +49,8 @@ const LISTING_URL = 'https://www.tractorjunction.com/assured-used-tractors-for-s
 // Upper safety bound only — scanning stops at the first page with no cards,
 // since the number of listing pages changes as the site refreshes daily.
 const MAX_LISTING_PAGES = 500;
-const SITE_DELAY_MS = Number(process.env.SITE_DELAY_MS || (process.env.HEADED === '1' ? 400 : 120));
+// ~1 request/second: faster scans overloaded the VMS API behind the site.
+const SITE_DELAY_MS = Number(process.env.SITE_DELAY_MS || 1000);
 const MAX_SITE_FETCHES = Number(process.env.MAX_SITE_FETCHES || Infinity);
 const OUT_DIR = path.resolve(ROOT, 'output');
 const USE_BROWSER = process.env.HEADED === '1';
