@@ -34,12 +34,32 @@ export async function getVmsLeads({ useCache = true } = {}) {
   }
   const token = process.env.PROD_VMS_TOKEN;
   if (!token) throw new Error('PROD_VMS_TOKEN is not set in .env');
-  const res = await fetch(`${API_BASE}/leads?search=&needExcel=false`, {
-    method: 'POST',
-    headers: { Authorization: token, 'X-Request-Source': 'WEB', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ data: {} }),
-  });
-  if (res.status !== 200) throw new Error(`VMS /leads returned ${res.status}: ${await res.text()}`);
+  // /leads is a read-only search, so it is safe to retry. The gateway sometimes
+  // returns 502/503/504 (or the connection drops) while VMS is busy.
+  const ATTEMPTS = 5;
+  let res;
+  for (let attempt = 1; ; attempt++) {
+    let problem = '';
+    try {
+      res = await fetch(`${API_BASE}/leads?search=&needExcel=false`, {
+        method: 'POST',
+        headers: { Authorization: token, 'X-Request-Source': 'WEB', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: {} }),
+        signal: AbortSignal.timeout(5 * 60 * 1000),
+      });
+      if (res.status === 200) break;
+      const text = (await res.text()).replace(/\s+/g, ' ').slice(0, 200);
+      problem = `VMS /leads returned ${res.status}: ${text}`;
+      if (![429, 500, 502, 503, 504].includes(res.status)) throw new Error(problem);
+    } catch (e) {
+      if (!problem) problem = `VMS /leads request failed: ${e.message}`;
+      else if (e.message === problem) throw e;
+    }
+    if (attempt >= ATTEMPTS) throw new Error(problem);
+    const delay = 15000 * 2 ** (attempt - 1);
+    console.warn(`  ${problem} — retry ${attempt}/${ATTEMPTS - 1} in ${delay / 1000}s`);
+    await new Promise((r) => setTimeout(r, delay));
+  }
   const body = await res.json();
   const lean = (body.data || []).map((l) => ({
     _id: l._id,
